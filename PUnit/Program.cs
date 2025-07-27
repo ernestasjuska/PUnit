@@ -28,7 +28,10 @@ public class PUnit : ITestFramework, IDataProducer
 
     public string Description => "This is PUnit.";
 
-    public Type[] DataTypesProduced => [typeof(TestNodeUpdateMessage)];
+    public Type[] DataTypesProduced =>
+    [
+        typeof(TestNodeUpdateMessage)
+    ];
 
     public Task<bool> IsEnabledAsync()
     {
@@ -45,37 +48,7 @@ public class PUnit : ITestFramework, IDataProducer
 
     public async Task ExecuteRequestAsync(ExecuteRequestContext context)
     {
-        try
-        {
-            //throw new Exception("oops");
-            await context.MessageBus.PublishAsync(
-                this,
-                new TestNodeUpdateMessage(
-                   sessionUid: context.Request.Session.SessionUid,
-                   testNode: new TestNode()
-                   {
-                       Uid = "SomeTest",
-                       DisplayName = "Some Test",
-                       Properties = new PropertyBag(new PassedTestNodeStateProperty(Explanation: "Works for me.")),
-                   }
-                )
-            );
-        }
-        catch (Exception e)
-        {
-             await context.MessageBus.PublishAsync(
-                 this,
-                 new TestNodeUpdateMessage(
-                    sessionUid: context.Request.Session.SessionUid,
-                    testNode: new TestNode()
-                    {
-                        Uid = "SomeTest",
-                        DisplayName = "Some Test",
-                        Properties = new PropertyBag(new FailedTestNodeStateProperty(e)),
-                    }
-                 )
-             );
-        }
+        await RunTests(context);
 
         context.Complete();
     }
@@ -86,5 +59,63 @@ public class PUnit : ITestFramework, IDataProducer
         {
             IsSuccess = true,
         });
+    }
+
+    private async Task RunTests(ExecuteRequestContext context)
+    {
+        await RunTest(context, "Passing Test", "Passing Test");
+        await RunTest(context, "Failing Test", "Failing Test");
+    }
+
+    public async Task RunTest(ExecuteRequestContext context, string testUid, string testDisplayName)
+    {
+        try
+        {
+            await context.MessageBus.PublishAsync(
+                this,
+                new TestNodeUpdateMessage(
+                   sessionUid: context.Request.Session.SessionUid,
+                   testNode: new TestNode()
+                   {
+                       Uid = testUid,
+                       DisplayName = testDisplayName,
+                       Properties = new PropertyBag(new DiscoveredTestNodeStateProperty(Explanation: "Hello!")),
+                   }
+                )
+            );
+
+            if (testUid.Contains("Failing"))
+            {
+                throw new Exception("oops");
+            }
+
+            await context.MessageBus.PublishAsync(
+                this,
+                new TestNodeUpdateMessage(
+                   sessionUid: context.Request.Session.SessionUid,
+                   testNode: new TestNode()
+                   {
+                       Uid = testUid,
+                       DisplayName = testDisplayName,
+                       Properties = new PropertyBag(new PassedTestNodeStateProperty(Explanation: "Works for me.")),
+                   }
+                )
+            );
+        }
+        catch (Exception e)
+        {
+            await context.MessageBus.PublishAsync(
+                this,
+                new TestNodeUpdateMessage(
+                   sessionUid: context.Request.Session.SessionUid,
+                   testNode: new TestNode()
+                   {
+                       Uid = testUid,
+                       DisplayName = testDisplayName,
+                       Properties = new PropertyBag(new FailedTestNodeStateProperty(e)),
+                   }
+                )
+            );
+        }
     }
 }
