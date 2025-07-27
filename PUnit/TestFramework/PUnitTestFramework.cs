@@ -4,6 +4,7 @@ using Microsoft.Testing.Platform.Extensions.TestFramework;
 using Microsoft.Testing.Platform.Services;
 using System;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.ExceptionServices;
 
 namespace PUnit.TestFramework;
@@ -83,6 +84,8 @@ public class PUnitTestFramework(IServiceProvider services) : ITestFramework, IDa
 
         StackTrace stackTrace = new(1);
 
+        // TODO: Simplify messaging and exception handling.
+
         try
         {
             await context.MessageBus.PublishAsync(
@@ -98,7 +101,28 @@ public class PUnitTestFramework(IServiceProvider services) : ITestFramework, IDa
                 )
             );
 
-            await RunTestActionAsync(testContext);
+            var (result, exception) = await RunTestActionAsync(testContext);
+            if (exception is not null)
+            {
+                var properties2 = new PropertyBag();
+
+                properties2.Add(new FailedTestNodeStateProperty(exception, explanation: exception.Message));
+
+                await context.MessageBus.PublishAsync(
+                    this,
+                    new TestNodeUpdateMessage(
+                       sessionUid: context.Request.Session.SessionUid,
+                       testNode: new TestNode()
+                       {
+                           Uid = test.Uid,
+                           DisplayName = test.DisplayName,
+                           Properties = properties2,
+                       }
+                    )
+                );
+                return;
+            }
+
 
             var properties = new PropertyBag();
             if (testContext.Response.Skipped)
@@ -125,6 +149,10 @@ public class PUnitTestFramework(IServiceProvider services) : ITestFramework, IDa
         }
         catch (Exception e)
         {
+            var properties = new PropertyBag();
+
+            properties.Add(new FailedTestNodeStateProperty(e, explanation: e.ToString()));
+
             await context.MessageBus.PublishAsync(
                 this,
                 new TestNodeUpdateMessage(
@@ -133,14 +161,14 @@ public class PUnitTestFramework(IServiceProvider services) : ITestFramework, IDa
                    {
                        Uid = test.Uid,
                        DisplayName = test.DisplayName,
-                       Properties = new PropertyBag(new FailedTestNodeStateProperty(e)),
+                       Properties = properties,
                    }
                 )
             );
         }
     }
 
-    private async Task RunTestActionAsync(
+    private async Task<(object? Result, Exception? Exception)> RunTestActionAsync(
         TestContext testContext)
     {
         // TODO: Ew. This is too hacky.
@@ -162,15 +190,28 @@ public class PUnitTestFramework(IServiceProvider services) : ITestFramework, IDa
             })
             .ToArray();
 
-        object? result = action.DynamicInvoke(parameterValues);
-        if (result is Task<object?> objectTask)
+        try
         {
-            result = await objectTask;
+            object? result = action.DynamicInvoke(parameterValues);
+            if (result is Task<object?> objectTask)
+            {
+                result = await objectTask;
+            }
+            else if (result is Task voidTask)
+            {
+                await voidTask;
+                result = null;
+            }
+
+            return (result, null);
         }
-        else if (result is Task voidTask)
+        catch (TargetInvocationException e) when (e.InnerException is not null)
         {
-            await voidTask;
-            result = null;
+            return (null, new TestActionException(e.InnerException));
+        }
+        catch (Exception e)
+        {
+            return (null, e);
         }
     }
 }
