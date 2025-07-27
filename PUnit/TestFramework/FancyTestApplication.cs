@@ -25,6 +25,7 @@ public sealed class FancyTestApplication : IDisposable
             Uid = testName,
             DisplayName = testName,
             Action = action,
+            Data = [],
         });
     }
 

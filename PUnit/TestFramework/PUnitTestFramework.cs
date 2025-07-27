@@ -1,11 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Testing.Platform.Extensions.Messages;
 using Microsoft.Testing.Platform.Extensions.TestFramework;
-using Microsoft.Testing.Platform.Services;
-using System;
 using System.Diagnostics;
 using System.Reflection;
-using System.Runtime.ExceptionServices;
 
 namespace PUnit.TestFramework;
 
@@ -173,6 +170,8 @@ public class PUnitTestFramework(IServiceProvider services) : ITestFramework, IDa
     {
         // TODO: Ew. This is too hacky.
 
+        // TODO: This has similar code digging into guts of types like in Tests. Mess around.
+
         Delegate action = testContext.Request.Test.Action;
 
         var parameters = action.Method.GetParameters();
@@ -184,6 +183,11 @@ public class PUnitTestFramework(IServiceProvider services) : ITestFramework, IDa
                 if (x.ParameterType == typeof(TestContext))
                 {
                     return testContext;
+                }
+
+                if (x.ParameterType.IsAssignableTo(typeof(ITestData)))
+                {
+                    return testContext.Request.Test.Data.First(d => d.TestDataType == x.ParameterType);
                 }
 
                 return testContext.Services.GetService(x.ParameterType);

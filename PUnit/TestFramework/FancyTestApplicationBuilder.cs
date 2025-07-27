@@ -13,13 +13,16 @@ public sealed class FancyTestApplicationBuilder
 {
     private readonly ITestApplicationBuilder _builder;
     private readonly ServiceContainer _testServices;
+    private readonly Tests _tests;
 
     private FancyTestApplicationBuilder(
         ITestApplicationBuilder builder,
-        ServiceContainer testServices)
+        ServiceContainer testServices,
+        Tests tests)
     {
         _builder = builder;
         _testServices = testServices;
+        _tests = tests;
     }
 
     public ITestHostManager TestHost => _builder.TestHost;
@@ -48,7 +51,9 @@ public sealed class FancyTestApplicationBuilder
         var basicBuilder = await TestApplication.CreateBuilderAsync(args, options);
 
         ServiceContainer testServices = new();
-        testServices.AddService(typeof(Tests), new Tests());
+
+        Tests tests = new();
+        testServices.AddService(typeof(Tests), tests);
 
         basicBuilder.RegisterTestFramework(
             capabilitiesFactory: (services) =>
@@ -60,8 +65,13 @@ public sealed class FancyTestApplicationBuilder
                 return new PUnitTestFramework(testServices);
             });
 
-        FancyTestApplicationBuilder builder = new(basicBuilder, testServices);
+        FancyTestApplicationBuilder builder = new(basicBuilder, testServices, tests);
 
         return builder;
+    }
+
+    internal void AddTestData<T>(string name, T value)
+    {
+        _tests.RegisterTestData(new TestData<T>(name, value));
     }
 }
